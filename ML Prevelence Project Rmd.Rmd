@@ -55,6 +55,7 @@ version$version.string
 
 ```{r }
 library(conflicted)
+library(plyr)
 library(sf)
 library(rpart)
 library(rpart.plot)
@@ -67,6 +68,8 @@ library(randomForest)
 library(table1)
 library(partykit)
 library(basictabler)
+library(ggplot2)
+library(data.table)
 ```
 
 Included packages:
@@ -105,9 +108,10 @@ prevelence_dta$city = factor(prevelence_dta$city,
 
 label(prevelence_dta$area) = "Area (km^2)"
 label(prevelence_dta$pop2016_0to17yrs) = "# of children 0-17 years old"
-label(prevelence_dta$child_density) = "Density of children 0-17 years old"
-label(prevelence_dta$collisions) = "Child AT Collisions"
-label(prevelence_dta$immigrant_recent_prop) = "Proportion of recent (<5yrs) immigrants"
+label(prevelence_dta$child_den) = "Density of children 0-17 years old"
+label(prevelence_dta$collisions_child) = "Child AT Collisions"
+label(prevelence_dta$active_t_prop) = "Proportion of active transportation"
+label(prevelence_dta$immigrant_pro) = "Proportion of recent (<5yrs) immigrants"
 label(prevelence_dta$school_num) = "Number of schools"
 label(prevelence_dta$road_sum) = "Length of roadway"
 label(prevelence_dta$pedcount) = "# of pedestrians"
@@ -116,7 +120,7 @@ label(prevelence_dta$bikecount) = "# of bicyclists"
 label(prevelence_dta$bikecount_prop) = "Proportion of bicyclists"
 
 
-table1(~ area + pop2016_0to17yrs + child_density + collisions + immigrant_recent_prop + school_num + road_sum + pedcount + pedcount_prop + bikecount + bikecount_prop | city,
+table1(~ area + pop2016_0to17yrs + child_den + collisions_child + active_t_prop + immigrant_pro + school_num + road_sum + pedcount + pedcount_prop + bikecount + bikecount_prop | city,
        data = prevelence_dta,
        render.continuous = "mean (sd)",
        #render.categorical,
@@ -131,19 +135,21 @@ prevelence_dta$city = factor(prevelence_dta$city,
                             )
 
 label(prevelence_dta$area) = "Area (km^2)"
-label(prevelence_dta$pop2016_0to17yrs) = "# of children 0-17 years old"
-label(prevelence_dta$child_density) = "Density of children 0-17 years old"
-label(prevelence_dta$collisions) = "Child AT Collisions"
-label(prevelence_dta$immigrant_recent_prop) = "Proportion of recent (<5yrs) immigrants"
+label(prevelence_dta$walkscore) = "Walkscore"
+label(prevelence_dta$pop2016_0to17yrs) = "Number of (0-17 yrs) children "
+label(prevelence_dta$pop_den) = "Population density"
+label(prevelence_dta$child_den) = "Density of children"
+label(prevelence_dta$enrollment) = "School enrollment"
+label(prevelence_dta$active_t_prop) = "Proportion of children using AT"
+label(prevelence_dta$collisions_child) = "Child AT-MVCs"
+label(prevelence_dta$immigrant_den) = "Density of immigrant population"
+label(prevelence_dta$multihome_den) = "Density of multihome buildings"
 label(prevelence_dta$school_num) = "Number of schools"
-label(prevelence_dta$road_sum) = "Length of roadway"
-label(prevelence_dta$pedcount) = "# of pedestrians"
-label(prevelence_dta$pedcount_prop) = "Proportion of pedestrians"
-label(prevelence_dta$bikecount) = "# of bicyclists"
-label(prevelence_dta$bikecount_prop) = "Proportion of bicyclists"
+label(prevelence_dta$road_den) = "Density of roadway"
 
 
-table1(~ area + pop2016_0to17yrs + child_density + collisions + immigrant_recent_prop + school_num + road_sum + pedcount + pedcount_prop + bikecount + bikecount_prop | city,
+
+table1(~ area + walkscore + pop2016_0to17yrs + pop_den + child_den + enrollment + active_t_prop + collisions_child + immigrant_den + multihome_den + school_num + road_den | city,
        data = prevelence_dta,
        render.continuous = "median (iqr)",
        #render.categorical,
@@ -165,7 +171,7 @@ This code removes all variations of the outcome variable.
 ```{r}
 #names(collision_dta)
 prevelence_df <- subset(prevelence_dta,
-  select = -c(myid, caroccup, caroccup_prop, pedcount, pedcount_prop, bikecount, bikecount_prop, other, other_prop, bussed, bussed_prop, active_t, total_count
+  select = -c(myid, caroccup, caroccup_prop, pedcount, pedcount_prop, bikecount, bikecount_prop, other, other_prop, bussed, bussed_prop, active_t, total_count, years, province, area, collisions_child, collisions_adult, pop2016, child_pro, pop2016_0to17yrs, lico_at_da, immigrant_pro, immigrant_recent, house_pre60, multihome_num, com_area, open_area, park_area, res_area, ind_area, gov_area, enrollment_pro, guard_den, highway_km, highway_pro, majorroad_pro, majorroad_km, minorroad_km, minorroad_pro, road_sum, intersection_num, signals_num, speedhump_roads_sum, circles_num, narrows_num, extensions_num, diverters_num, diverters_den, crosswalks_num, flashing_num, speedsigns_num, speedsigns_den, raised_crosswalk_num, raised_crosswalk_den, bikeclass_1, bikeclass_2, bikeclass_3, bikeclass_total, bikeclass_pro
               ))
 ```
 
@@ -200,12 +206,13 @@ As the outcome variable is a count (number of collisions), we will be using a Po
 # This chunk specifies the control pieces of the model. As there are multiple models being built using the same characteristics, this saves space
 set.seed(seed)
 minsplit = 20
+cp = 0.001
 
 control = rpart.control(
   xval = 10,  
   minsplit = 20,
   minbucket = round(minsplit/3),
-  cp = 0.001,
+  cp = cp,
   maxcompete = 4, 
   maxsurrogate = 5, 
   usesurrogate = 2, 
@@ -231,8 +238,12 @@ model_nocity = rpart(
 ```
 
 ```{r include = T}
-rpart.plot(model, main = "Regression Tree of AT Prevelence")
-rpart.plot(model_nocity, main = "Regression Tree of AT Prevelence (No city variable)")
+rpart.plot(model, main = "Regression Tree of AT Prevelence",
+           yesno = 2,
+           box.palette = "-RdYlGn",)
+rpart.plot(model_nocity, main = "Regression Tree of AT Prevelence (No city variable)",
+           yesno = 2,
+           box.palette = "-RdYlGn",)
 ```
 
 
@@ -333,8 +344,12 @@ print(mincp_nocity)
 
 So here is our final tree:
 ```{r include = T}
-rpart.plot(pmodel, main = "Poisson Regression Tree of At Prevelence, Pruned")
-rpart.plot(pmodel_nocity, main = "Poisson Regression Tree of At Prevelence, Pruned (No city variable)")
+rpart.plot(pmodel, main = "Poisson Regression Tree of At Prevelence, Pruned",
+           yesno = 2,
+           box.palette = "RdYlGn",)
+rpart.plot(pmodel_nocity, main = "Poisson Regression Tree of At Prevelence, Pruned (No city variable)",
+           yesno = 2,
+           box.palette = "RdYlGn",)
 ```
 
 
@@ -471,13 +486,13 @@ model_van = rpart(
 ```
 
 ```{r include = T}
-rpart.plot(model_cal, main = "Regression Tree of AT Prevelence in Calgary")
-rpart.plot(model_pee, main = "Regression Tree of AT Prevelence in Peel Region")
-rpart.plot(model_tor, main = "Regression Tree of AT Prevelence in Toronto")
-rpart.plot(model_mon, main = "Regression Tree of AT Prevelence in Montreal")
-rpart.plot(model_lav, main = "Regression Tree of AT Prevelence in Laval")
-rpart.plot(model_sur, main = "Regression Tree of AT Prevelence in Surrey")
-rpart.plot(model_van, main = "Regression Tree of AT Prevelence in Vancouver")
+rpart.plot(model_cal, main = "Regression Tree of AT Prevelence in Calgary", yesno = 2,box.palette = "RdYlGn",)
+rpart.plot(model_pee, main = "Regression Tree of AT Prevelence in Peel Region",yesno = 2,box.palette = "RdYlGn",)
+rpart.plot(model_tor, main = "Regression Tree of AT Prevelence in Toronto", yesno = 2,box.palette = "RdYlGn",)
+rpart.plot(model_mon, main = "Regression Tree of AT Prevelence in Montreal", yesno = 2,box.palette = "RdYlGn",)
+rpart.plot(model_lav, main = "Regression Tree of AT Prevelence in Laval", yesno = 2,box.palette = "RdYlGn",)
+rpart.plot(model_sur, main = "Regression Tree of AT Prevelence in Surrey", yesno = 2,box.palette = "RdYlGn",)
+rpart.plot(model_van, main = "Regression Tree of AT Prevelence in Vancouver", yesno = 2,box.palette = "RdYlGn",)
 ```
 
 ## Step  6c) Predict outcomes
@@ -615,13 +630,13 @@ print(paste("Vancouver mincp:", mincp_van))
 ```
 
 ```{r include = T}
-rpart.plot(pmodel_cal, main = "Regression Tree of AT Prevelence in Calgary")
-rpart.plot(pmodel_pee, main = "Regression Tree of AT Prevelence in Peel Region")
-rpart.plot(pmodel_tor, main = "Regression Tree of AT Prevelence in Toronto")
-rpart.plot(pmodel_mon, main = "Regression Tree of AT Prevelence in Montreal")
-rpart.plot(pmodel_lav, main = "Regression Tree of AT Prevelence in Laval")
-rpart.plot(pmodel_sur, main = "Regression Tree of AT Prevelence in Surrey")
-rpart.plot(pmodel_van, main = "Regression Tree of AT Prevelence in Vancouver")
+rpart.plot(pmodel_cal, main = "Regression Tree of AT Prevelence in Calgary", box.palette = "RdYlGn")
+rpart.plot(pmodel_pee, main = "Regression Tree of AT Prevelence in Peel Region",box.palette = "RdYlGn",)
+rpart.plot(pmodel_tor, main = "Regression Tree of AT Prevelence in Toronto", yesno = 2, box.palette = "RdYlGn",)
+rpart.plot(pmodel_mon, main = "Regression Tree of AT Prevelence in Montreal", yesno = 2, box.palette = "RdYlGn",)
+rpart.plot(pmodel_lav, main = "Regression Tree of AT Prevelence in Laval", box.palette = "RdYlGn",)
+rpart.plot(pmodel_sur, main = "Regression Tree of AT Prevelence in Surrey", box.palette = "RdYlGn",)
+rpart.plot(pmodel_van, main = "Regression Tree of AT Prevelence in Vancouver", yesno = 2, box.palette = "RdYlGn",)
 ```
 
 ```{r}
@@ -767,14 +782,39 @@ vip::vi(pmodel_mon)
 vip::vi(pmodel_lav)
 vip::vi(pmodel_sur)
 vip::vi(pmodel_van)
+
+df_pmodel = as.data.frame(vip::vi(pmodel))
+df_pmodel_nocity = as.data.frame(vip::vi(pmodel_nocity))
+df_pmodel_cal = as.data.frame(vip::vi(pmodel_cal))
+df_pmodel_tor = as.data.frame(vip::vi(pmodel_tor))
+df_pmodel_pee = as.data.frame(vip::vi(pmodel_pee))
+df_pmodel_lav = as.data.frame(vip::vi(pmodel_lav))
+df_pmodel_mon = as.data.frame(vip::vi(pmodel_mon))
+df_pmodel_sur = as.data.frame(vip::vi(pmodel_sur))
+df_pmodel_van = as.data.frame(vip::vi(pmodel_van))
+
+df_model_cal = as.data.frame(vip::vi(model_cal))
+df_model_tor = as.data.frame(vip::vi(model_tor))
+df_model_pee = as.data.frame(vip::vi(model_pee))
+df_model_lav = as.data.frame(vip::vi(model_lav))
+df_model_mon = as.data.frame(vip::vi(model_mon))
+df_model_sur = as.data.frame(vip::vi(model_sur))
+df_model_van = as.data.frame(vip::vi(model_van))
+
+colnames(df_pmodel) = c("Variable", "National")
+colnames(df_pmodel_nocity) = c("Variable", "National, No City")
+colnames(df_pmodel_tor) = c("Variable", "Toronto")
+colnames(df_pmodel_mon) = c("Variable", "Montreal")
+colnames(df_pmodel_van) = c("Variable", "Vancouver")
+
+colnames(df_model_cal) = c("Variable", "Calgary")
+colnames(df_model_pee) = c("Variable", "Peel Region")
+colnames(df_model_lav) = c("Variable", "Laval")
+colnames(df_model_sur) = c("Variable", "Surrey")
 ```
 ```{r}
 # Explore trying to automate averaging the importance scores
 
-
-#avgimp_tor = var_importance_ptor
-
-#avgimp_tor
 ```
 
 
@@ -857,7 +897,68 @@ vip::vi(model_sur)
 vip::vi(model_van)
 ```
 
+```{r}
+df_pimportance = join_all(list(df_pmodel,df_pmodel_nocity, df_model_cal, df_pmodel_tor, df_model_pee,df_model_lav,df_pmodel_mon,df_model_sur,df_pmodel_van), 
+         by='Variable', type='full'
+         )
+#view(df_pimportance)
+```
 
+
+```{r}
+#df_pimportance$group = select(df_pimportance,"Variable")
+df_pimportanceplot = df_pimportance
+rownames(df_pimportanceplot) = (df_pimportanceplot[,1])
+df_pimportanceplot = df_pimportanceplot[,-1]
+df_pimportanceplot$Predictor = row.names(df_pimportanceplot)
+dat.m = melt(df_pimportanceplot)
+impplot = ggplot(dat.m, aes(value, y=reorder(Predictor,value,na.rm=TRUE))) + labs(y="Predictors", x="Importance Score", color = "Model") + geom_point(aes(colour = variable))
+ggsave(impplot, filename = "C:\\Users\\tateh\\OneDrive - University of Calgary\\Tate HubkaRao - PhD\\Projects\\ML Project\\Analysis\\AT Importance Score Dot Plot.png")
+impplot
+```
+
+```{r}
+# Dot plots of importance scores
+impdata = dat.m
+#impdata$predictor = factor(impdata$predictor)
+
+impdata$color[impdata$variable=="National"] = "red"
+impdata$color[impdata$variable=="National, No City"] = "blue"
+impdata$color[impdata$variable=="Calgary"] = "grey"
+impdata$color[impdata$variable=="Peel"] = "green"
+impdata$color[impdata$variable=="Toronto"] = "yellow"
+impdata$color[impdata$variable=="Laval"] = "orange"
+impdata$color[impdata$variable=="Montreal"] = "purple"
+impdata$color[impdata$variable=="Surrey"] = "white"
+impdata$color[impdata$variable=="Vancouver"] = "black"
+
+
+dotchart(impdata$value, 
+         #cex=.7,
+         groups=impdata$predictor,
+         labels=row.names(impdata$predictor),
+         xlab = "Importance",
+         color=impdata$color
+         )
+```
+```{r}
+impdata
+```
+
+
+```{r}
+combined_testdf = cbind(predict_ptest, test)
+combined_traindf = cbind(predict_ptrain, train)
+
+combined_testdf = dplyr::rename(combined_testdf, c("predicted"="predict_ptest"))
+combined_traindf = dplyr::rename(combined_traindf, c("predicted"="predict_ptrain"))
+
+prevalence_merge_df = rbind(combined_testdf, combined_traindf)
+
+prevalence_final_df = cbind(prevalence_merge_df, prevelence_dta[,c("myid","active_t")])
+
+write.csv(prevalence_final_df, "C:\\Users\\tateh\\OneDrive - University of Calgary\\Tate HubkaRao - PhD\\Projects\\ML Project\\Analysis\\Predicted Prevalence.csv")
+```
 
 
 
